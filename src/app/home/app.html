@@ -1,194 +1,310 @@
-<main class="app">
-  <div class="app-header">
+<main class="mx-auto my-12 max-w-[480px] px-4 font-sans text-zinc-900 dark:text-zinc-100">
+  <div class="flex items-start justify-between gap-4">
     <div>
-      <h1>ng-ql Todo example</h1>
-      <p class="subtitle">
-        A minimal Angular app built on <code>ng-ql</code> — <code>TodoResource</code> extends
-        <code>NgQlResource</code>, reads use the Signal API with caching, and every mutation
-        auto-invalidates the cache.
+      <h1 class="mb-1 text-2xl font-bold">ng-ql Todo example</h1>
+      <p class="mb-6 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
+        A minimal Angular app built on <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">ng-ql</code> —
+        <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">TodoResource</code> extends
+        <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">NgQlResource</code>, reads use the Signal API
+        with caching, and every mutation auto-invalidates the cache.
       </p>
     </div>
-    <button
-      type="button"
-      class="settings-btn"
-      (click)="settingsDialog.showModal()"
-      aria-label="Settings"
-      title="Export / import / link devices"
-    >
-      ⚙️
-      @if (incomingRequests().data()?.length) {
-        <span class="settings-btn__badge">{{ incomingRequests().data()?.length }}</span>
-      }
-    </button>
+    <div class="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        class="grid h-9 w-9 place-items-center rounded-full border border-zinc-300 bg-white text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        (click)="toggleDarkMode($event)"
+        [attr.aria-label]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
+        [attr.title]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
+      >
+        <app-icon [name]="darkMode() ? 'sun' : 'moon'" [size]="17" />
+      </button>
+      <button
+        type="button"
+        class="relative grid h-9 w-9 place-items-center rounded-full border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        (click)="settingsDialog.showModal()"
+        aria-label="Settings"
+        title="Export / import / link devices"
+      >
+        <app-icon name="settings" [size]="17" />
+        @if (incomingRequests().data()?.length) {
+          <span
+            class="absolute -top-1 -right-1 grid h-[1.1rem] min-w-[1.1rem] place-items-center rounded-full bg-red-600 px-1 text-[0.65rem] text-white"
+          >
+            {{ incomingRequests().data()?.length }}
+          </span>
+        }
+      </button>
+    </div>
   </div>
 
-  <form class="add-form" (submit)="$event.preventDefault(); add()">
+  <form class="mb-4 flex gap-2" (submit)="$event.preventDefault(); add()">
     <input
       type="text"
       placeholder="What needs doing?"
+      class="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-base dark:border-zinc-700 dark:bg-zinc-900"
       [ngModel]="newTitle()"
       (ngModelChange)="newTitle.set($event)"
       name="newTitle"
     />
-    <button type="submit">Add</button>
+    <button type="submit" class="rounded-md bg-violet-700 px-4 py-2 text-base text-white hover:bg-violet-800">
+      Add
+    </button>
   </form>
 
-  <div class="filters">
+  <div class="mb-4 flex gap-2">
     <button
       type="button"
-      [class.active]="filter() === 'all'"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700"
+      [class.bg-violet-700]="filter() === 'all'"
+      [class.border-violet-700]="filter() === 'all'"
+      [class.text-white]="filter() === 'all'"
       (click)="setFilter('all')"
     >
       All
     </button>
     <button
       type="button"
-      [class.active]="filter() === 'active'"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700"
+      [class.bg-violet-700]="filter() === 'active'"
+      [class.border-violet-700]="filter() === 'active'"
+      [class.text-white]="filter() === 'active'"
       (click)="setFilter('active')"
     >
       Active
     </button>
     <button
       type="button"
-      [class.active]="filter() === 'done'"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700"
+      [class.bg-violet-700]="filter() === 'done'"
+      [class.border-violet-700]="filter() === 'done'"
+      [class.text-white]="filter() === 'done'"
       (click)="setFilter('done')"
     >
       Done
     </button>
   </div>
 
-  <div class="search">
+  <div class="mb-4 flex gap-2">
     <input
       type="search"
-      class="search__title"
       placeholder="Search title…"
+      class="flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
       [ngModel]="searchTitle()"
       (ngModelChange)="onSearchTitleInput($event)"
       name="searchTitle"
     />
     <input
       type="date"
-      class="search__date"
+      class="rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
       [ngModel]="searchDate()"
       (ngModelChange)="onSearchDateChange($event)"
       name="searchDate"
       aria-label="Search by creation date"
     />
     @if (searchTitle() || searchDate()) {
-      <button type="button" class="search__clear" (click)="clearSearch()">Clear</button>
+      <button
+        type="button"
+        class="rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm text-zinc-500 dark:border-zinc-700"
+        (click)="clearSearch()"
+      >
+        Clear
+      </button>
     }
   </div>
 
   @if (list().loading()) {
-    <p class="hint">Loading…</p>
+    <p class="text-sm text-zinc-400">Loading…</p>
   }
   @if (list().error()) {
-    <p class="error">Something went wrong.</p>
+    <p class="text-sm text-red-600">Something went wrong.</p>
   }
 
-  <ul class="todo-list">
+  <ul class="flex list-none flex-col gap-1.5 p-0">
     @for (todo of list().data() ?? []; track todo.id) {
-      <li>
-        <label>
+      <li
+        class="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800"
+      >
+        <label class="flex items-center gap-2">
           <input type="checkbox" [checked]="todo.done" (change)="toggle(todo.id, todo.done)" />
-          <span [class.done]="todo.done">{{ todo.title }}</span>
-          <span class="todo-date" [title]="todo.createdAt">{{ todo.createdAt | relativeTime }}</span>
+          <span [class.line-through]="todo.done" [class.text-zinc-400]="todo.done">{{ todo.title }}</span>
+          <span class="text-xs whitespace-nowrap text-zinc-400" [title]="todo.createdAt">
+            {{ todo.createdAt | relativeTime }}
+          </span>
         </label>
-        <button type="button" class="remove" (click)="remove(todo.id)" aria-label="Delete">
-          ✕
+        <button
+          type="button"
+          class="text-zinc-400 hover:text-red-600"
+          (click)="remove(todo.id)"
+          aria-label="Delete"
+        >
+          <app-icon name="trash" [size]="16" />
         </button>
       </li>
     } @empty {
       @if (!list().loading()) {
-        <li class="hint">Nothing here.</li>
+        <li class="text-sm text-zinc-400">Nothing here.</li>
       }
     }
   </ul>
 
-  <dialog #settingsDialog class="settings-dialog" (click)="onDialogBackdropClick($event, settingsDialog)">
-    <div class="settings-dialog__header">
-      <h2>Settings</h2>
-      <button type="button" class="close" (click)="settingsDialog.close()" aria-label="Close">
-        ✕
+  <dialog
+    #settingsDialog
+    class="w-[min(420px,calc(100vw-2rem))] max-h-[min(600px,calc(100vh-4rem))] overflow-y-auto rounded-xl border-0 p-5 font-sans text-zinc-900 backdrop:bg-black/40 dark:bg-zinc-900 dark:text-zinc-100"
+    (click)="onDialogBackdropClick($event, settingsDialog)"
+  >
+    <div class="mb-2 flex items-center justify-between">
+      <h2 class="m-0 text-lg font-semibold">Settings</h2>
+      <button
+        type="button"
+        class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+        (click)="settingsDialog.close()"
+        aria-label="Close"
+      >
+        <app-icon name="x" [size]="18" />
       </button>
     </div>
 
-    <section class="panel">
-      <h2>Export / import</h2>
-      <div class="panel__row">
-        <button type="button" (click)="export()">Export as JSON</button>
-        <label class="file-input">
-          Import JSON
-          <input type="file" accept="application/json" (change)="onImportFile($event)" />
+    <section class="mt-0 border-t-0 pt-0">
+      <h2 class="mb-2 text-base font-semibold">Export / import</h2>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700 dark:bg-zinc-900"
+          (click)="export()"
+        >
+          <app-icon name="download" [size]="14" /> Export as JSON
+        </button>
+        <label
+          class="relative flex cursor-pointer items-center gap-1.5 overflow-hidden rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <app-icon name="upload" [size]="14" /> Import JSON
+          <input
+            type="file"
+            accept="application/json"
+            class="absolute inset-0 cursor-pointer opacity-0"
+            (change)="onImportFile($event)"
+          />
         </label>
       </div>
     </section>
 
-    <section class="panel">
-      <h2>This device</h2>
-      <p class="hint">
+    <section class="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+      <h2 class="mb-2 text-base font-semibold">This device</h2>
+      <p class="text-sm text-zinc-500 dark:text-zinc-400">
         No account, no login. Start listening to get a short code another device can enter to
         request your todos — you'll see the request here and have to approve it.
       </p>
 
       @if (!listening()) {
-        <button type="button" (click)="startListening()">Start listening</button>
+        <button
+          type="button"
+          class="mt-2 flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          (click)="startListening()"
+        >
+          <app-icon name="wifi" [size]="14" /> Start listening
+        </button>
       } @else {
-        <div class="panel__row">
-          <code class="device-id device-id--code">{{ deviceCode() }}</code>
-          <button type="button" (click)="copyDeviceCode()">Copy</button>
-          <button type="button" (click)="stopListening()">Stop</button>
+        <div class="mt-2 flex items-center gap-2">
+          <code
+            class="flex-1 rounded-md bg-zinc-100 px-2.5 py-1.5 text-center text-xl font-bold tracking-[0.15em] dark:bg-zinc-800"
+          >
+            {{ deviceCode() }}
+          </code>
+          <button
+            type="button"
+            class="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            (click)="copyDeviceCode()"
+          >
+            <app-icon name="copy" [size]="14" />
+          </button>
+          <button
+            type="button"
+            class="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            (click)="stopListening()"
+          >
+            <app-icon name="wifi-off" [size]="14" />
+          </button>
         </div>
       }
 
       @if (incomingRequests().data()?.length) {
-        <div class="link-requests">
-          <h3>Devices asking to link to this one</h3>
+        <div class="mt-3 flex flex-col gap-1.5">
+          <h3 class="mt-4 mb-1 text-sm font-semibold">Devices asking to link to this one</h3>
           @for (request of incomingRequests().data(); track request.id) {
-            <div class="link-request">
-              <code>{{ request.requesterId }}</code>
-              <div class="link-request__actions">
-                <button type="button" class="approve" (click)="approve(request)">Approve</button>
-                <button type="button" class="deny" (click)="deny(request)">Deny</button>
+            <div
+              class="flex items-center justify-between gap-2 rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 dark:border-amber-700 dark:bg-amber-950/40"
+            >
+              <div class="min-w-0 flex flex-col gap-0.5">
+                <span class="text-sm font-semibold">{{ request.requesterDevice || 'Unknown device' }}</span>
+                <span class="text-xs text-amber-700 dark:text-amber-400">{{ request.requesterIp || 'unknown IP' }}</span>
+              </div>
+              <div class="flex shrink-0 gap-1.5">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 rounded-md border border-green-600 bg-green-600 px-2.5 py-1 text-sm text-white"
+                  (click)="approve(request)"
+                >
+                  <app-icon name="check" [size]="14" /> Approve
+                </button>
+                <button
+                  type="button"
+                  class="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm text-red-600 dark:border-zinc-700"
+                  (click)="deny(request)"
+                >
+                  <app-icon name="x" [size]="14" /> Deny
+                </button>
               </div>
             </div>
           }
         </div>
       }
 
-      <h3>Load todos from another device</h3>
-      <p class="hint">
+      <h3 class="mt-4 mb-1 text-sm font-semibold">Load todos from another device</h3>
+      <p class="text-sm text-zinc-500 dark:text-zinc-400">
         Enter that device's code below (it must be listening). It'll see a pending request and
         must approve it before this device switches over.
       </p>
-      <div class="panel__row">
+      <div class="mt-2 flex items-center gap-2">
         <input
           type="text"
           inputmode="numeric"
           maxlength="5"
           placeholder="12345"
+          class="flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           [ngModel]="linkTargetCode()"
           (ngModelChange)="linkTargetCode.set($event)"
           name="linkTargetCode"
           [disabled]="linkState() === 'sending' || linkState() === 'waiting'"
         />
         @if (linkState() === 'waiting') {
-          <button type="button" (click)="cancelLink()">Cancel</button>
+          <button
+            type="button"
+            class="rounded-md border border-zinc-300 px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700"
+            (click)="cancelLink()"
+          >
+            Cancel
+          </button>
         } @else {
-          <button type="button" [disabled]="!linkTargetCode().trim()" (click)="requestLink()">
-            Request link
+          <button
+            type="button"
+            class="flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm whitespace-nowrap disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
+            [disabled]="!linkTargetCode().trim()"
+            (click)="requestLink()"
+          >
+            <app-icon name="link" [size]="14" /> Request link
           </button>
         }
       </div>
       @switch (linkState()) {
         @case ('waiting') {
-          <p class="hint">Waiting for the other device to approve…</p>
+          <p class="mt-2 text-sm text-zinc-400">Waiting for the other device to approve…</p>
         }
         @case ('denied') {
-          <p class="error">The other device denied this request.</p>
+          <p class="mt-2 text-sm text-red-600">The other device denied this request.</p>
         }
         @case ('error') {
-          <p class="error">Couldn't send the request — check the code and try again.</p>
+          <p class="mt-2 text-sm text-red-600">Couldn't send the request — check the code and try again.</p>
         }
       }
     </section>

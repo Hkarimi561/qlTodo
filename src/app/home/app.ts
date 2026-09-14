@@ -16,16 +16,19 @@ import type { Todo } from './model/todo.model';
 import { TodoResource } from './resource/todo-resource';
 import { RelativeTimePipe } from './relative-time.pipe';
 import { getUserId, setUserId } from './user-id';
+import { getBrowserLabel, getPublicIp } from './device-info';
+import { Icon } from './icon';
 
 type Filter = 'all' | 'active' | 'done';
 type LinkState = 'idle' | 'sending' | 'waiting' | 'denied' | 'error';
 
 const SEARCH_DEBOUNCE_MS = 300;
 const POLL_INTERVAL_MS = 4000;
+const DARK_MODE_STORAGE_KEY = 'ng-ql-todo-dark-mode';
 
 @Component({
   selector: 'app-root',
-  imports: [FormsModule, RelativeTimePipe],
+  imports: [FormsModule, RelativeTimePipe, Icon],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -40,6 +43,7 @@ export class App {
   protected readonly searchTitle = signal('');
   protected readonly searchDate = signal(''); // yyyy-mm-dd, from <input type="date">
   protected readonly newTitle = signal('');
+  protected readonly darkMode = signal(localStorage.getItem(DARK_MODE_STORAGE_KEY) === 'true');
 
   /**
    * Rebuilt from scratch every time a filter/search input changes.
@@ -67,6 +71,8 @@ export class App {
   );
 
   constructor() {
+    document.documentElement.classList.toggle('dark', this.darkMode());
+
     const handle = setInterval(() => this.poll(), POLL_INTERVAL_MS);
     inject(DestroyRef).onDestroy(() => {
       clearInterval(handle);
@@ -180,6 +186,67 @@ export class App {
     if (event.target === dialog) dialog.close();
   }
 
+  /**
+   * Toggles dark mode with a circular reveal that expands from the clicked icon
+   * across the whole page, via the View Transitions API (falls back to an
+   * instant switch on browsers that don't support it, e.g. Firefox/Safari <18).
+   */
+  toggleDarkMode(event: MouseEvent): void {
+    const enabled = !this.darkMode();
+    const apply = () => this.applyDarkMode(enabled);
+
+    const startViewTransition = (
+      document as Document & {
+        startViewTransition?: (cb: () => void) => {
+          ready: Promise<void>;
+          finished: Promise<void>;
+        };
+      }
+    ).startViewTransition?.bind(document);
+
+    if (!startViewTransition) {
+      apply();
+      return;
+    }
+
+    const x = event.clientX;
+    const y = event.clientY;
+    const endRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y),
+    );
+
+    const noop = () => {
+      // The transition can be skipped/aborted (e.g. a second toggle fires before
+      // the first finishes, the tab is backgrounded, or the browser lacks real
+      // compositor support) — `apply()` already landed (or lands below), so
+      // there's nothing to redo.
+    };
+
+    try {
+      const transition = startViewTransition(apply);
+      transition.finished.catch(noop);
+      transition.ready
+        .then(() => {
+          document.documentElement.animate(
+            {
+              clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`],
+            },
+            { duration: 600, easing: 'ease-in-out', pseudoElement: '::view-transition-new(root)' },
+          );
+        })
+        .catch(noop);
+    } catch {
+      apply();
+    }
+  }
+
+  private applyDarkMode(enabled: boolean): void {
+    this.darkMode.set(enabled);
+    document.documentElement.classList.toggle('dark', enabled);
+    localStorage.setItem(DARK_MODE_STORAGE_KEY, String(enabled));
+  }
+
   // -- Device linking --------------------------------------------------------
 
   /** Registers a fresh 5-digit code for this device, retrying on a (rare) collision. */
@@ -226,14 +293,22 @@ export class App {
       .where({ code })
       .get()
       .subscribe({
-        next: (matches) => {
+        next: async (matches) => {
           const targetUserId = matches[0]?.userId;
           if (!targetUserId || targetUserId === this.userId()) {
             this.linkState.set('error');
             return;
           }
+          const requesterDevice = getBrowserLabel();
+          const requesterIp = await getPublicIp();
           this.linkRequests
-            .create({ requesterId: this.userId(), targetUserId, status: 'pending' })
+            .create({
+              requesterId: this.userId(),
+              requesterDevice,
+              requesterIp,
+              targetUserId,
+              status: 'pending',
+            })
             .subscribe({
               next: (row) => {
                 this.outgoingRequestId = row.id;

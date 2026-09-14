@@ -46,6 +46,8 @@ create policy "anon full access to todos" on public.todos
 create table public.link_requests (
   id uuid primary key default gen_random_uuid(),
   "requesterId" uuid not null,
+  "requesterDevice" text,
+  "requesterIp" text,
   "targetUserId" uuid not null,
   status text not null default 'pending' check (status in ('pending', 'approved', 'denied')),
   "createdAt" timestamptz not null default now()
@@ -69,6 +71,13 @@ create policy "anon full access to device_codes" on public.device_codes
 ```
 
 > These RLS policies grant full read/write to anyone holding the anon key — appropriate for a login-free demo, not for anything holding real user data. A production app would scope rows to `auth.uid()` behind real authentication instead.
+
+If you created `link_requests` before `requesterDevice`/`requesterIp` existed, add them with:
+
+```sql
+alter table public.link_requests add column "requesterDevice" text;
+alter table public.link_requests add column "requesterIp" text;
+```
 
 ### 2. Configure the app (local dev)
 
