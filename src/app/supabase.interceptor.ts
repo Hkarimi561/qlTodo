@@ -1,5 +1,6 @@
 import type { HttpInterceptorFn, HttpRequest } from '@angular/common/http';
-import { HttpHeaders, HttpParams } from '@angular/common/http';
+import { HttpHeaders, HttpParams, HttpResponse } from '@angular/common/http';
+import { map } from 'rxjs';
 import { environment } from '../environments/environment';
 import type { Todo } from './home/model/todo.model';
 import { getUserId } from './home/user-id';
@@ -11,15 +12,35 @@ const API_PREFIX = '/api/';
  * array" header — required for `create()`/`patch()`/`find()`, whose response
  * adapter expects a bare item, not a one-element array. PostgREST otherwise
  * always wraps affected/matched rows in an array, even for a single row.
+ *
+ * `countExact: true` additionally asks PostgREST to compute the exact total
+ * row count (returned via the `Content-Range` response header) — needed to
+ * translate a paginated GET's response into `{ data, meta }` below.
  */
-function supabaseHeaders(existing: HttpHeaders, { single = false } = {}): HttpHeaders {
+function supabaseHeaders(existing: HttpHeaders, { single = false, countExact = false } = {}): HttpHeaders {
+  const preferDirectives = ['return=representation', ...(countExact ? ['count=exact'] : [])];
   let headers = existing
     .set('apikey', environment.supabaseAnonKey)
     .set('Authorization', `Bearer ${environment.supabaseAnonKey}`)
     .set('Content-Type', 'application/json')
-    .set('Prefer', 'return=representation');
+    .set('Prefer', preferDirectives.join(','));
   if (single) headers = headers.set('Accept', 'application/vnd.pgrst.object+json');
   return headers;
+}
+
+/** Total row count from a PostgREST `Content-Range: 0-4/23` response header (`null` if absent or the total is unknown). */
+function totalFromContentRange(header: string | null): number | null {
+  if (!header) return null;
+  const total = header.split('/')[1];
+  return total && total !== '*' ? Number(total) : null;
+}
+
+/** `page[number]` / `page[size]` as sent by `paginateSignal`/`page()`, translated to PostgREST's `limit`/`offset`. */
+function readPageInfo(params: HttpParams): { page: number; perPage: number } | null {
+  const perPage = params.get('page[size]');
+  if (!perPage) return null;
+  const page = Number(params.get('page[number]') ?? 1);
+  return { page, perPage: Number(perPage) };
 }
 
 /** `field=eq.value` for every one of `fields` present (as a bare equality param) on `params`. */
@@ -52,6 +73,13 @@ function rewriteTodosGet(req: HttpRequest<unknown>): HttpParams {
   if (sort === '-createdAt') params = params.set('order', 'createdAt.desc');
   else if (sort === 'createdAt') params = params.set('order', 'createdAt.asc');
 
+  const pageInfo = readPageInfo(req.params);
+  if (pageInfo) {
+    params = params
+      .set('limit', String(pageInfo.perPage))
+      .set('offset', String((pageInfo.page - 1) * pageInfo.perPage));
+  }
+
   return params;
 }
 
@@ -75,17 +103,37 @@ export const supabaseInterceptor: HttpInterceptorFn = (req, next) => {
     const id = req.url.split(`${API_PREFIX}todos/`)[1];
 
     if (req.method === 'GET') {
+      const pageInfo = id ? null : readPageInfo(req.params);
       const params = id
         ? new HttpParams()
             .set('select', 'id,title,done,createdAt')
             .set('id', `eq.${id}`)
             .set('user_id', `eq.${getUserId()}`)
         : rewriteTodosGet(req);
+
       return next(
         req.clone({
           url: `${environment.supabaseUrl}/rest/v1/todos`,
           params,
-          headers: supabaseHeaders(req.headers, { single: !!id }),
+          headers: supabaseHeaders(req.headers, { single: !!id, countExact: !!pageInfo }),
+        }),
+      ).pipe(
+        map((event) => {
+          // Translate PostgREST's bare-array response + `Content-Range` header
+          // into the `{ data, meta }` shape `adaptPaginated` expects, so
+          // `hasMore()`/`loadMore()` see the real total instead of treating
+          // whatever came back as the entire (one-page) result set.
+          if (pageInfo && event instanceof HttpResponse && Array.isArray(event.body)) {
+            const total = totalFromContentRange(event.headers.get('content-range')) ?? event.body.length;
+            const meta = {
+              currentPage: pageInfo.page,
+              perPage: pageInfo.perPage,
+              total,
+              lastPage: Math.max(1, Math.ceil(total / pageInfo.perPage)),
+            };
+            return event.clone({ body: { data: event.body, meta } });
+          }
+          return event;
         }),
       );
     }

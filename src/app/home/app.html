@@ -1,19 +1,36 @@
-<main class="mx-auto my-12 max-w-[480px] px-4 font-sans text-zinc-900 dark:text-zinc-100">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <h1 class="mb-1 text-2xl font-bold">ng-ql Todo example</h1>
-      <p class="mb-6 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
-        A minimal Angular app built on <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">ng-ql</code> —
-        <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">TodoResource</code> extends
-        <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">NgQlResource</code>, reads use the Signal API
-        with caching, and every mutation auto-invalidates the cache.
-      </p>
+<main
+  class="mx-auto my-12 max-w-[480px] px-4 font-sans text-zinc-900 dark:text-zinc-100"
+  (click)="infoOpen.set(false)"
+>
+  <div class="mb-6 flex items-start justify-between gap-4">
+    <div class="relative flex items-center gap-1.5" (click)="$event.stopPropagation()">
+      <h1 class="text-2xl font-bold">QL Todo</h1>
+      <button
+        type="button"
+        class="grid h-6 w-6 place-items-center rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+        (click)="infoOpen.set(!infoOpen())"
+        aria-label="About this app"
+        [attr.aria-expanded]="infoOpen()"
+      >
+        <app-icon name="info" [size]="16" />
+      </button>
+      @if (infoOpen()) {
+        <div
+          class="absolute top-full left-0 z-10 mt-2 w-72 rounded-lg border border-zinc-200 bg-white p-3 text-sm leading-relaxed text-zinc-500 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+        >
+          A minimal Angular app built on <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">ng-ql</code> —
+          <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">TodoResource</code> extends
+          <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">NgQlResource</code>, reads use the Signal API
+          with caching, and every mutation auto-invalidates the cache.
+        </div>
+      }
     </div>
     <div class="flex shrink-0 items-center gap-2">
       <button
+        #darkToggleBtn
         type="button"
         class="grid h-9 w-9 place-items-center rounded-full border border-zinc-300 bg-white text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-        (click)="toggleDarkMode($event)"
+        (click)="toggleDarkMode()"
         [attr.aria-label]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
         [attr.title]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
       >
@@ -47,15 +64,23 @@
       (ngModelChange)="newTitle.set($event)"
       name="newTitle"
     />
-    <button type="submit" class="rounded-md bg-violet-700 px-4 py-2 text-base text-white hover:bg-violet-800">
-      Add
+    <button
+      type="submit"
+      class="flex min-w-[4.5rem] items-center justify-center gap-1.5 rounded-md bg-violet-700 px-4 py-2 text-base text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
+      [disabled]="creating()"
+    >
+      @if (creating()) {
+        <app-spinner [size]="16" />
+      } @else {
+        Add
+      }
     </button>
   </form>
 
-  <div class="mb-4 flex gap-2">
+  <div class="mb-4 flex flex-wrap gap-2">
     <button
       type="button"
-      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700"
       [class.bg-violet-700]="filter() === 'all'"
       [class.border-violet-700]="filter() === 'all'"
       [class.text-white]="filter() === 'all'"
@@ -65,7 +90,7 @@
     </button>
     <button
       type="button"
-      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700"
       [class.bg-violet-700]="filter() === 'active'"
       [class.border-violet-700]="filter() === 'active'"
       [class.text-white]="filter() === 'active'"
@@ -75,7 +100,7 @@
     </button>
     <button
       type="button"
-      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700"
       [class.bg-violet-700]="filter() === 'done'"
       [class.border-violet-700]="filter() === 'done'"
       [class.text-white]="filter() === 'done'"
@@ -83,38 +108,94 @@
     >
       Done
     </button>
-  </div>
 
-  <div class="mb-4 flex gap-2">
-    <input
-      type="search"
-      placeholder="Search title…"
-      class="flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-      [ngModel]="searchTitle()"
-      (ngModelChange)="onSearchTitleInput($event)"
-      name="searchTitle"
-    />
-    <input
-      type="date"
-      class="rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-      [ngModel]="searchDate()"
-      (ngModelChange)="onSearchDateChange($event)"
-      name="searchDate"
-      aria-label="Search by creation date"
-    />
-    @if (searchTitle() || searchDate()) {
-      <button
-        type="button"
-        class="rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm text-zinc-500 dark:border-zinc-700"
-        (click)="clearSearch()"
-      >
-        Clear
-      </button>
+    <span class="mx-1 self-center text-zinc-300 dark:text-zinc-700">|</span>
+
+    <button
+      type="button"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700"
+      [class.bg-violet-700]="dateFilter() === 'today'"
+      [class.border-violet-700]="dateFilter() === 'today'"
+      [class.text-white]="dateFilter() === 'today'"
+      (click)="setDateFilter('today')"
+    >
+      Today
+    </button>
+    <button
+      type="button"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700"
+      [class.bg-violet-700]="dateFilter() === 'this-week'"
+      [class.border-violet-700]="dateFilter() === 'this-week'"
+      [class.text-white]="dateFilter() === 'this-week'"
+      (click)="setDateFilter('this-week')"
+    >
+      This week
+    </button>
+    <button
+      type="button"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700"
+      [class.bg-violet-700]="dateFilter() === 'last-week'"
+      [class.border-violet-700]="dateFilter() === 'last-week'"
+      [class.text-white]="dateFilter() === 'last-week'"
+      (click)="setDateFilter('last-week')"
+    >
+      Last week
+    </button>
+    <button
+      type="button"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700"
+      [class.bg-violet-700]="dateFilter() === 'this-month'"
+      [class.border-violet-700]="dateFilter() === 'this-month'"
+      [class.text-white]="dateFilter() === 'this-month'"
+      (click)="setDateFilter('this-month')"
+    >
+      This month
+    </button>
+    <button
+      type="button"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700"
+      [class.bg-violet-700]="dateFilter() === 'last-month'"
+      [class.border-violet-700]="dateFilter() === 'last-month'"
+      [class.text-white]="dateFilter() === 'last-month'"
+      (click)="setDateFilter('last-month')"
+    >
+      Last month
+    </button>
+    <button
+      type="button"
+      class="rounded-full border border-zinc-300 px-3 py-1.5 text-sm whitespace-nowrap dark:border-zinc-700"
+      [class.bg-violet-700]="dateFilter() === 'custom'"
+      [class.border-violet-700]="dateFilter() === 'custom'"
+      [class.text-white]="dateFilter() === 'custom'"
+      (click)="setDateFilter('custom')"
+    >
+      Custom
+    </button>
+
+    @if (dateFilter() === 'custom') {
+      <input
+        type="date"
+        class="rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        [ngModel]="customFrom()"
+        (ngModelChange)="onCustomFromChange($event)"
+        name="customFrom"
+        aria-label="From date"
+      />
+      <input
+        type="date"
+        class="rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        [ngModel]="customTo()"
+        (ngModelChange)="onCustomToChange($event)"
+        name="customTo"
+        aria-label="To date"
+      />
     }
   </div>
 
   @if (list().loading()) {
-    <p class="text-sm text-zinc-400">Loading…</p>
+    <div class="flex justify-center py-6 text-zinc-400">
+      <app-spinner [size]="24" />
+    </div>
   }
   @if (list().error()) {
     <p class="text-sm text-red-600">Something went wrong.</p>
@@ -148,6 +229,14 @@
     }
   </ul>
 
+  @if (list().hasMore()) {
+    <div #scrollSentinel class="flex justify-center py-4 text-zinc-400">
+      @if (list().loadingMore()) {
+        <app-spinner [size]="20" />
+      }
+    </div>
+  }
+
   <dialog
     #settingsDialog
     class="m-auto w-[min(420px,calc(100vw-2rem))] max-h-[min(600px,calc(100vh-4rem))] overflow-y-auto rounded-xl border-0 p-5 font-sans text-zinc-900 backdrop:bg-black/40 dark:bg-zinc-900 dark:text-zinc-100"
@@ -166,6 +255,30 @@
     </div>
 
     <section class="mt-0 border-t-0 pt-0">
+      <h2 class="mb-2 text-base font-semibold">Direction</h2>
+      <div class="flex gap-4 text-sm">
+        <label class="flex items-center gap-1.5">
+          <input
+            type="radio"
+            name="direction"
+            [checked]="direction() === 'ltr'"
+            (change)="setDirection('ltr')"
+          />
+          LTR
+        </label>
+        <label class="flex items-center gap-1.5">
+          <input
+            type="radio"
+            name="direction"
+            [checked]="direction() === 'rtl'"
+            (change)="setDirection('rtl')"
+          />
+          RTL
+        </label>
+      </div>
+    </section>
+
+    <section class="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
       <h2 class="mb-2 text-base font-semibold">Export / import</h2>
       <div class="flex items-center gap-2">
         <button

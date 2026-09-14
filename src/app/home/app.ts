@@ -1,13 +1,17 @@
 import {
   Component,
   DestroyRef,
+  effect,
+  ElementRef,
   EnvironmentInjector,
   inject,
   runInInjectionContext,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import type { NgQlRequestState } from 'ng-ql';
+import type { NgQlPaginatedRequestState, NgQlRequestState } from 'ng-ql';
+import { finalize } from 'rxjs';
 import type { DeviceCode } from './model/device-code.model';
 import { DeviceCodeResource } from './resource/device-code-resource';
 import type { LinkRequest } from './model/link-request.model';
@@ -18,17 +22,65 @@ import { RelativeTimePipe } from './relative-time.pipe';
 import { getUserId, setUserId } from './user-id';
 import { getBrowserLabel, getPublicIp } from './device-info';
 import { Icon } from './icon';
+import { Spinner } from './spinner';
 
 type Filter = 'all' | 'active' | 'done';
+type DateFilter = 'none' | 'today' | 'this-week' | 'last-week' | 'this-month' | 'last-month' | 'custom';
 type LinkState = 'idle' | 'sending' | 'waiting' | 'denied' | 'error';
+type Direction = 'ltr' | 'rtl';
 
-const SEARCH_DEBOUNCE_MS = 300;
 const POLL_INTERVAL_MS = 4000;
+const PAGE_SIZE = 10;
 const DARK_MODE_STORAGE_KEY = 'ng-ql-todo-dark-mode';
+const DIRECTION_STORAGE_KEY = 'ng-ql-todo-direction';
+
+const pad = (n: number) => String(n).padStart(2, '0');
+const toDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+/** Resolves a preset/custom date filter to a `[fromDateStr, toDateStr]` (yyyy-mm-dd) range. */
+function computeDateRange(filter: DateFilter, customFrom: string, customTo: string): [string, string] | null {
+  const today = startOfDay(new Date());
+
+  switch (filter) {
+    case 'today':
+      return [toDateStr(today), toDateStr(today)];
+    case 'this-week': {
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      return [toDateStr(monday), toDateStr(sunday)];
+    }
+    case 'last-week': {
+      const thisMonday = new Date(today);
+      thisMonday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+      const lastMonday = new Date(thisMonday);
+      lastMonday.setDate(thisMonday.getDate() - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      return [toDateStr(lastMonday), toDateStr(lastSunday)];
+    }
+    case 'this-month': {
+      const first = new Date(today.getFullYear(), today.getMonth(), 1);
+      const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      return [toDateStr(first), toDateStr(last)];
+    }
+    case 'last-month': {
+      const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const last = new Date(today.getFullYear(), today.getMonth(), 0);
+      return [toDateStr(first), toDateStr(last)];
+    }
+    case 'custom':
+      return customFrom && customTo ? [customFrom, customTo] : null;
+    default:
+      return null;
+  }
+}
 
 @Component({
   selector: 'app-root',
-  imports: [FormsModule, RelativeTimePipe, Icon],
+  imports: [FormsModule, RelativeTimePipe, Icon, Spinner],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -37,21 +89,31 @@ export class App {
   private readonly todos = inject(TodoResource);
   private readonly linkRequests = inject(LinkRequestResource);
   private readonly deviceCodes = inject(DeviceCodeResource);
-  private searchDebounce?: ReturnType<typeof setTimeout>;
 
-  protected readonly filter = signal<Filter>('all');
-  protected readonly searchTitle = signal('');
-  protected readonly searchDate = signal(''); // yyyy-mm-dd, from <input type="date">
+  protected readonly darkToggleBtn = viewChild<ElementRef<HTMLButtonElement>>('darkToggleBtn');
+  protected readonly scrollSentinel = viewChild<ElementRef<HTMLElement>>('scrollSentinel');
+
+  protected readonly filter = signal<Filter>('active');
+  protected readonly dateFilter = signal<DateFilter>('none');
+  protected readonly customFrom = signal(''); // yyyy-mm-dd, from <input type="date">
+  protected readonly customTo = signal('');
   protected readonly newTitle = signal('');
+  protected readonly creating = signal(false);
+  protected readonly infoOpen = signal(false);
   protected readonly darkMode = signal(localStorage.getItem(DARK_MODE_STORAGE_KEY) === 'true');
+  protected readonly direction = signal<Direction>(
+    (localStorage.getItem(DIRECTION_STORAGE_KEY) as Direction) || 'ltr',
+  );
 
   /**
    * Rebuilt from scratch every time a filter/search input changes.
-   * `getSignal()` requires an injection context, so this runs inside
+   * `paginateSignal()` requires an injection context, so this runs inside
    * `runInInjectionContext` rather than a component field initializer —
    * unlike a fixed set of filters, title/date search inputs are open-ended.
+   * Starts back at page 1 (5 items) each time; further pages are appended
+   * via `loadMore()` as the scroll sentinel below the list comes into view.
    */
-  protected readonly list = signal<NgQlRequestState<Todo[]>>(this.runQuery());
+  protected readonly list = signal<NgQlPaginatedRequestState<Todo>>(this.runQuery());
 
   // -- Device identity & linking --------------------------------------------
 
@@ -72,6 +134,7 @@ export class App {
 
   constructor() {
     document.documentElement.classList.toggle('dark', this.darkMode());
+    document.documentElement.setAttribute('dir', this.direction());
 
     const handle = setInterval(() => this.poll(), POLL_INTERVAL_MS);
     inject(DestroyRef).onDestroy(() => {
@@ -79,46 +142,65 @@ export class App {
       const code = this.deviceCode();
       if (code) this.deviceCodes.destroy(code).subscribe();
     });
+
+    // Infinite scroll: re-observe the sentinel `<div>` at the bottom of the
+    // list (rendered only while `hasMore()`) each time it appears, and load
+    // the next page of 5 once it's within 200px of the viewport.
+    effect((onCleanup) => {
+      const target = this.scrollSentinel()?.nativeElement;
+      if (!target) return;
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting) this.list().loadMore();
+        },
+        { rootMargin: '200px' },
+      );
+      observer.observe(target);
+      onCleanup(() => observer.disconnect());
+    });
   }
 
-  // -- Filtering & search ----------------------------------------------------
+  // -- Filtering ---------------------------------------------------------
 
   setFilter(filter: Filter): void {
     this.filter.set(filter);
     this.list.set(this.runQuery());
   }
 
-  onSearchTitleInput(value: string): void {
-    this.searchTitle.set(value);
-    clearTimeout(this.searchDebounce);
-    this.searchDebounce = setTimeout(() => this.list.set(this.runQuery()), SEARCH_DEBOUNCE_MS);
-  }
-
-  onSearchDateChange(value: string): void {
-    this.searchDate.set(value);
+  /** Selecting the already-active date filter clears it back to 'none'. */
+  setDateFilter(value: DateFilter): void {
+    const next = this.dateFilter() === value ? 'none' : value;
+    this.dateFilter.set(next);
+    if (next === 'custom') return; // wait for both From/To to be picked
     this.list.set(this.runQuery());
   }
 
-  clearSearch(): void {
-    this.searchTitle.set('');
-    this.searchDate.set('');
-    this.list.set(this.runQuery());
+  onCustomFromChange(value: string): void {
+    this.customFrom.set(value);
+    this.applyCustomRangeIfComplete();
   }
 
-  private runQuery(): NgQlRequestState<Todo[]> {
+  onCustomToChange(value: string): void {
+    this.customTo.set(value);
+    this.applyCustomRangeIfComplete();
+  }
+
+  private applyCustomRangeIfComplete(): void {
+    if (this.customFrom() && this.customTo()) this.list.set(this.runQuery());
+  }
+
+  private runQuery(): NgQlPaginatedRequestState<Todo> {
     return runInInjectionContext(this.injector, () => {
       let query = this.todos.query().orderBy('createdAt', 'desc');
 
       if (this.filter() === 'active') query = query.where('done', false);
       if (this.filter() === 'done') query = query.where('done', true);
 
-      const title = this.searchTitle().trim();
-      if (title) query = query.where('title', 'like', title);
+      const range = computeDateRange(this.dateFilter(), this.customFrom(), this.customTo());
+      if (range) query = query.whereBetween('createdAt', [`${range[0]}T00:00:00.000Z`, `${range[1]}T23:59:59.999Z`]);
 
-      const date = this.searchDate();
-      if (date) query = query.whereBetween('createdAt', [`${date}T00:00:00.000Z`, `${date}T23:59:59.999Z`]);
-
-      return query.getSignal({ cache: 'no-store' });
+      return query.paginateSignal(1, PAGE_SIZE, { cache: 'no-store' });
     });
   }
 
@@ -126,11 +208,16 @@ export class App {
 
   add(): void {
     const title = this.newTitle().trim();
-    if (!title) return;
-    this.todos.create({ title }).subscribe(() => {
-      this.newTitle.set('');
-      this.list().refresh();
-    });
+    if (!title || this.creating()) return;
+
+    this.creating.set(true);
+    this.todos
+      .create({ title })
+      .pipe(finalize(() => this.creating.set(false)))
+      .subscribe(() => {
+        this.newTitle.set('');
+        this.list().refresh();
+      });
   }
 
   toggle(id: number, done: boolean): void {
@@ -187,11 +274,17 @@ export class App {
   }
 
   /**
-   * Toggles dark mode with a circular reveal that expands from the clicked icon
+   * Toggles dark mode with a circular reveal that expands from the toggle icon
    * across the whole page, via the View Transitions API (falls back to an
    * instant switch on browsers that don't support it, e.g. Firefox/Safari <18).
+   *
+   * Uses the button's own `getBoundingClientRect()` center rather than the
+   * click/tap event's coordinates — on mobile, touch-synthesized click events
+   * can report coordinates that don't match the icon's actual position
+   * (e.g. (0,0)), which made the reveal appear to start from the top-left
+   * corner instead of the icon.
    */
-  toggleDarkMode(event: MouseEvent): void {
+  toggleDarkMode(): void {
     const enabled = !this.darkMode();
     const apply = () => this.applyDarkMode(enabled);
 
@@ -209,8 +302,9 @@ export class App {
       return;
     }
 
-    const x = event.clientX;
-    const y = event.clientY;
+    const rect = this.darkToggleBtn()?.nativeElement.getBoundingClientRect();
+    const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const y = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
     const endRadius = Math.hypot(
       Math.max(x, window.innerWidth - x),
       Math.max(y, window.innerHeight - y),
@@ -245,6 +339,12 @@ export class App {
     this.darkMode.set(enabled);
     document.documentElement.classList.toggle('dark', enabled);
     localStorage.setItem(DARK_MODE_STORAGE_KEY, String(enabled));
+  }
+
+  setDirection(direction: Direction): void {
+    this.direction.set(direction);
+    document.documentElement.setAttribute('dir', direction);
+    localStorage.setItem(DIRECTION_STORAGE_KEY, direction);
   }
 
   // -- Device linking --------------------------------------------------------

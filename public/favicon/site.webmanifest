@@ -1,6 +1,6 @@
 {
-  "name": "NG-QL",
-  "short_name": "NGQL",
+  "name": "QLTODO",
+  "short_name": "TODO",
   "icons": [
     {
       "src": "web-app-manifest-192x192.png",
