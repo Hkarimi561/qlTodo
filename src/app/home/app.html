@@ -1,0 +1,162 @@
+<main class="app">
+  <h1>ng-ql Todo example</h1>
+  <p class="subtitle">
+    A minimal Angular app built on <code>ng-ql</code> — <code>TodoResource</code> extends
+    <code>NgQlResource</code>, reads use the Signal API with caching, and every mutation
+    auto-invalidates the cache.
+  </p>
+
+  <form class="add-form" (submit)="$event.preventDefault(); add()">
+    <input
+      type="text"
+      placeholder="What needs doing?"
+      [ngModel]="newTitle()"
+      (ngModelChange)="newTitle.set($event)"
+      name="newTitle"
+    />
+    <button type="submit">Add</button>
+  </form>
+
+  <div class="filters">
+    <button
+      type="button"
+      [class.active]="filter() === 'all'"
+      (click)="setFilter('all')"
+    >
+      All
+    </button>
+    <button
+      type="button"
+      [class.active]="filter() === 'active'"
+      (click)="setFilter('active')"
+    >
+      Active
+    </button>
+    <button
+      type="button"
+      [class.active]="filter() === 'done'"
+      (click)="setFilter('done')"
+    >
+      Done
+    </button>
+  </div>
+
+  <div class="search">
+    <input
+      type="search"
+      class="search__title"
+      placeholder="Search title…"
+      [ngModel]="searchTitle()"
+      (ngModelChange)="onSearchTitleInput($event)"
+      name="searchTitle"
+    />
+    <input
+      type="date"
+      class="search__date"
+      [ngModel]="searchDate()"
+      (ngModelChange)="onSearchDateChange($event)"
+      name="searchDate"
+      aria-label="Search by creation date"
+    />
+    @if (searchTitle() || searchDate()) {
+      <button type="button" class="search__clear" (click)="clearSearch()">Clear</button>
+    }
+  </div>
+
+  @if (list().loading()) {
+    <p class="hint">Loading…</p>
+  }
+  @if (list().error()) {
+    <p class="error">Something went wrong.</p>
+  }
+
+  <ul class="todo-list">
+    @for (todo of list().data() ?? []; track todo.id) {
+      <li>
+        <label>
+          <input type="checkbox" [checked]="todo.done" (change)="toggle(todo.id, todo.done)" />
+          <span [class.done]="todo.done">{{ todo.title }}</span>
+        </label>
+        <button type="button" class="remove" (click)="remove(todo.id)" aria-label="Delete">
+          ✕
+        </button>
+      </li>
+    } @empty {
+      @if (!list().loading()) {
+        <li class="hint">Nothing here.</li>
+      }
+    }
+  </ul>
+
+  <section class="panel">
+    <h2>Export / import</h2>
+    <div class="panel__row">
+      <button type="button" (click)="export()">Export as JSON</button>
+      <label class="file-input">
+        Import JSON
+        <input type="file" accept="application/json" (change)="onImportFile($event)" />
+      </label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>This device</h2>
+    <p class="hint">
+      No account, no login — every todo above is scoped to this id. Copy it before switching
+      devices/browsers so you can link back to it.
+    </p>
+    <div class="panel__row">
+      <code class="device-id">{{ userId() }}</code>
+      <button type="button" (click)="copyUserId()">Copy</button>
+    </div>
+
+    @if (incomingRequests().data()?.length) {
+      <div class="link-requests">
+        <h3>Devices asking to link to this one</h3>
+        @for (request of incomingRequests().data(); track request.id) {
+          <div class="link-request">
+            <code>{{ request.requesterId }}</code>
+            <div class="link-request__actions">
+              <button type="button" class="approve" (click)="approve(request)">Approve</button>
+              <button type="button" class="deny" (click)="deny(request)">Deny</button>
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    <h3>Load todos from another device</h3>
+    <p class="hint">
+      Paste that device's id below. It'll see a pending request here and must approve it before
+      this device switches over.
+    </p>
+    <div class="panel__row">
+      <input
+        type="text"
+        placeholder="Other device's id"
+        [ngModel]="linkTargetId()"
+        (ngModelChange)="linkTargetId.set($event)"
+        name="linkTargetId"
+        [disabled]="linkState() === 'sending' || linkState() === 'waiting'"
+      />
+      @if (linkState() === 'waiting') {
+        <button type="button" (click)="cancelLink()">Cancel</button>
+      } @else {
+        <button type="button" [disabled]="!linkTargetId().trim()" (click)="requestLink()">
+          Request link
+        </button>
+      }
+    </div>
+    @switch (linkState()) {
+      @case ('waiting') {
+        <p class="hint">Waiting for the other device to approve…</p>
+      }
+      @case ('denied') {
+        <p class="error">The other device denied this request.</p>
+      }
+      @case ('error') {
+        <p class="error">Couldn't send the request — check the id and try again.</p>
+      }
+    }
+  </section>
+</main>
