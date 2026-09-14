@@ -1,10 +1,26 @@
 <main class="app">
-  <h1>ng-ql Todo example</h1>
-  <p class="subtitle">
-    A minimal Angular app built on <code>ng-ql</code> — <code>TodoResource</code> extends
-    <code>NgQlResource</code>, reads use the Signal API with caching, and every mutation
-    auto-invalidates the cache.
-  </p>
+  <div class="app-header">
+    <div>
+      <h1>ng-ql Todo example</h1>
+      <p class="subtitle">
+        A minimal Angular app built on <code>ng-ql</code> — <code>TodoResource</code> extends
+        <code>NgQlResource</code>, reads use the Signal API with caching, and every mutation
+        auto-invalidates the cache.
+      </p>
+    </div>
+    <button
+      type="button"
+      class="settings-btn"
+      (click)="settingsDialog.showModal()"
+      aria-label="Settings"
+      title="Export / import / link devices"
+    >
+      ⚙️
+      @if (incomingRequests().data()?.length) {
+        <span class="settings-btn__badge">{{ incomingRequests().data()?.length }}</span>
+      }
+    </button>
+  </div>
 
   <form class="add-form" (submit)="$event.preventDefault(); add()">
     <input
@@ -76,6 +92,7 @@
         <label>
           <input type="checkbox" [checked]="todo.done" (change)="toggle(todo.id, todo.done)" />
           <span [class.done]="todo.done">{{ todo.title }}</span>
+          <span class="todo-date" [title]="todo.createdAt">{{ todo.createdAt | relativeTime }}</span>
         </label>
         <button type="button" class="remove" (click)="remove(todo.id)" aria-label="Delete">
           ✕
@@ -88,75 +105,92 @@
     }
   </ul>
 
-  <section class="panel">
-    <h2>Export / import</h2>
-    <div class="panel__row">
-      <button type="button" (click)="export()">Export as JSON</button>
-      <label class="file-input">
-        Import JSON
-        <input type="file" accept="application/json" (change)="onImportFile($event)" />
-      </label>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h2>This device</h2>
-    <p class="hint">
-      No account, no login — every todo above is scoped to this id. Copy it before switching
-      devices/browsers so you can link back to it.
-    </p>
-    <div class="panel__row">
-      <code class="device-id">{{ userId() }}</code>
-      <button type="button" (click)="copyUserId()">Copy</button>
+  <dialog #settingsDialog class="settings-dialog" (click)="onDialogBackdropClick($event, settingsDialog)">
+    <div class="settings-dialog__header">
+      <h2>Settings</h2>
+      <button type="button" class="close" (click)="settingsDialog.close()" aria-label="Close">
+        ✕
+      </button>
     </div>
 
-    @if (incomingRequests().data()?.length) {
-      <div class="link-requests">
-        <h3>Devices asking to link to this one</h3>
-        @for (request of incomingRequests().data(); track request.id) {
-          <div class="link-request">
-            <code>{{ request.requesterId }}</code>
-            <div class="link-request__actions">
-              <button type="button" class="approve" (click)="approve(request)">Approve</button>
-              <button type="button" class="deny" (click)="deny(request)">Deny</button>
+    <section class="panel">
+      <h2>Export / import</h2>
+      <div class="panel__row">
+        <button type="button" (click)="export()">Export as JSON</button>
+        <label class="file-input">
+          Import JSON
+          <input type="file" accept="application/json" (change)="onImportFile($event)" />
+        </label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>This device</h2>
+      <p class="hint">
+        No account, no login. Start listening to get a short code another device can enter to
+        request your todos — you'll see the request here and have to approve it.
+      </p>
+
+      @if (!listening()) {
+        <button type="button" (click)="startListening()">Start listening</button>
+      } @else {
+        <div class="panel__row">
+          <code class="device-id device-id--code">{{ deviceCode() }}</code>
+          <button type="button" (click)="copyDeviceCode()">Copy</button>
+          <button type="button" (click)="stopListening()">Stop</button>
+        </div>
+      }
+
+      @if (incomingRequests().data()?.length) {
+        <div class="link-requests">
+          <h3>Devices asking to link to this one</h3>
+          @for (request of incomingRequests().data(); track request.id) {
+            <div class="link-request">
+              <code>{{ request.requesterId }}</code>
+              <div class="link-request__actions">
+                <button type="button" class="approve" (click)="approve(request)">Approve</button>
+                <button type="button" class="deny" (click)="deny(request)">Deny</button>
+              </div>
             </div>
-          </div>
+          }
+        </div>
+      }
+
+      <h3>Load todos from another device</h3>
+      <p class="hint">
+        Enter that device's code below (it must be listening). It'll see a pending request and
+        must approve it before this device switches over.
+      </p>
+      <div class="panel__row">
+        <input
+          type="text"
+          inputmode="numeric"
+          maxlength="5"
+          placeholder="12345"
+          [ngModel]="linkTargetCode()"
+          (ngModelChange)="linkTargetCode.set($event)"
+          name="linkTargetCode"
+          [disabled]="linkState() === 'sending' || linkState() === 'waiting'"
+        />
+        @if (linkState() === 'waiting') {
+          <button type="button" (click)="cancelLink()">Cancel</button>
+        } @else {
+          <button type="button" [disabled]="!linkTargetCode().trim()" (click)="requestLink()">
+            Request link
+          </button>
         }
       </div>
-    }
-
-    <h3>Load todos from another device</h3>
-    <p class="hint">
-      Paste that device's id below. It'll see a pending request here and must approve it before
-      this device switches over.
-    </p>
-    <div class="panel__row">
-      <input
-        type="text"
-        placeholder="Other device's id"
-        [ngModel]="linkTargetId()"
-        (ngModelChange)="linkTargetId.set($event)"
-        name="linkTargetId"
-        [disabled]="linkState() === 'sending' || linkState() === 'waiting'"
-      />
-      @if (linkState() === 'waiting') {
-        <button type="button" (click)="cancelLink()">Cancel</button>
-      } @else {
-        <button type="button" [disabled]="!linkTargetId().trim()" (click)="requestLink()">
-          Request link
-        </button>
+      @switch (linkState()) {
+        @case ('waiting') {
+          <p class="hint">Waiting for the other device to approve…</p>
+        }
+        @case ('denied') {
+          <p class="error">The other device denied this request.</p>
+        }
+        @case ('error') {
+          <p class="error">Couldn't send the request — check the code and try again.</p>
+        }
       }
-    </div>
-    @switch (linkState()) {
-      @case ('waiting') {
-        <p class="hint">Waiting for the other device to approve…</p>
-      }
-      @case ('denied') {
-        <p class="error">The other device denied this request.</p>
-      }
-      @case ('error') {
-        <p class="error">Couldn't send the request — check the id and try again.</p>
-      }
-    }
-  </section>
+    </section>
+  </dialog>
 </main>

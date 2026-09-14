@@ -13,14 +13,14 @@ A runnable Angular app showing how to use [`ng-ql`](https://github.com/Hkarimi56
 
 ### How device identity & linking work
 
-There's no login. On first visit, the app generates a `crypto.randomUUID()` and stores it in `localStorage` — every todo it reads/writes is scoped to that id (`user_id` column in Supabase). To pick up your todos on a new device/browser:
+There's no login. On first visit, the app generates a `crypto.randomUUID()` and stores it in `localStorage` — every todo it reads/writes is scoped to that id (`user_id` column in Supabase), but that uuid is never shown or typed anywhere. To pick up your todos on a new device/browser:
 
-1. On the **old** device, copy "This device"'s id.
-2. On the **new** device, paste it into "Load todos from another device" and submit — this inserts a row into `link_requests` with `status: 'pending'`.
-3. The old device polls for pending requests targeting its id and shows an **Approve/Deny** prompt.
-4. Once approved, the new device adopts the old device's id (overwriting its own) and its todo list switches over. The request row is then deleted.
+1. On the **old** device, open Settings → "This device" → **Start listening**. This registers a random 5-digit code (`device_codes` table) pointing at that device's uuid.
+2. On the **new** device, enter that code under "Load todos from another device" and submit — the app first resolves the code to a uuid, then inserts a row into `link_requests` with `status: 'pending'`.
+3. The old device polls for pending requests while listening and shows an **Approve/Deny** prompt.
+4. Once approved, the new device adopts the old device's id (overwriting its own) and its todo list switches over. The request row and the device code are then deleted.
 
-This makes the user-id a shared secret, not real authentication — anyone who has it (e.g. from an exported JSON file) has full read/write access to those todos. Fine for a personal demo; don't put anything sensitive in it.
+This makes the code (and the uuid behind it) a shared secret, not real authentication — anyone who has it has full read/write access to those todos while it's active. Fine for a personal demo; don't put anything sensitive in it.
 
 ## Setup
 
@@ -56,13 +56,27 @@ create index link_requests_target_idx on public.link_requests ("targetUserId", s
 alter table public.link_requests enable row level security;
 create policy "anon full access to link_requests" on public.link_requests
   for all to anon using (true) with check (true);
+
+create table public.device_codes (
+  code text primary key,
+  "userId" uuid not null,
+  "createdAt" timestamptz not null default now()
+);
+
+alter table public.device_codes enable row level security;
+create policy "anon full access to device_codes" on public.device_codes
+  for all to anon using (true) with check (true);
 ```
 
 > These RLS policies grant full read/write to anyone holding the anon key — appropriate for a login-free demo, not for anything holding real user data. A production app would scope rows to `auth.uid()` behind real authentication instead.
 
-### 2. Configure the app
+### 2. Configure the app (local dev)
 
-Fill in [`src/environments/environment.ts`](src/environments/environment.ts) with your project's URL and anon/public key (Supabase dashboard → Project Settings → API):
+`src/environments/environment.ts` is gitignored — copy the committed template and fill in your project's URL and anon/public key (Supabase dashboard → Project Settings → API):
+
+```bash
+cp src/environments/environment.example.ts src/environments/environment.ts
+```
 
 ```ts
 export const environment = {
@@ -71,7 +85,7 @@ export const environment = {
 };
 ```
 
-The anon key is meant to be public in a browser bundle — RLS policies (above) are what actually decide access.
+The anon key is meant to be public in a browser bundle — RLS policies (above) are what actually decide access. It's still kept out of git here for cleanliness (and so nobody accidentally commits a *different*, unintended project's key).
 
 ### 3. Run it
 
@@ -84,7 +98,27 @@ Open `http://localhost:4200/`.
 
 ## Deploying to GitHub Pages
 
-[`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds and deploys on every push to `main` (or manually via workflow_dispatch). One-time setup in the GitHub repo: **Settings → Pages → Source → GitHub Actions**. The workflow builds with `--base-href /qlTodo/` — update that if the repo is renamed.
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds and deploys on every push to `main` (or manually via workflow_dispatch). Since `environment.ts` isn't committed, the workflow generates it at build time from two **repository secrets**:
+
+1. On GitHub: **Settings → Secrets and variables → Actions → New repository secret**, and add:
+   - `SUPABASE_URL` — your project's URL (e.g. `https://xxxxxxxxxxxx.supabase.co`)
+   - `SUPABASE_ANON_KEY` — the `anon` `public` key (never the `service_role` key)
+2. **Settings → Pages → Source → GitHub Actions** (one-time, enables Pages deployment at all).
+
+The workflow's "Write environment.ts from repo secrets" step then writes the real file right before `ng build`:
+
+```yaml
+- name: Write environment.ts from repo secrets
+  run: |
+    cat > src/environments/environment.ts <<EOF
+    export const environment = {
+      supabaseUrl: '${{ secrets.SUPABASE_URL }}',
+      supabaseAnonKey: '${{ secrets.SUPABASE_ANON_KEY }}',
+    };
+    EOF
+```
+
+GitHub automatically masks secret values in the Actions log output. The build also uses `--base-href /qlTodo/` — update that if the repo is renamed.
 
 ## Where to go next
 

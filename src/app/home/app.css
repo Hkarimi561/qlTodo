@@ -5,9 +5,45 @@
   font-family: system-ui, sans-serif;
 }
 
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 h1 {
   font-size: 1.5rem;
   margin-bottom: 0.25rem;
+}
+
+.settings-btn {
+  position: relative;
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid #ccc;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.settings-btn__badge {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.3rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: #d33;
+  color: white;
+  font-size: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .subtitle {
@@ -124,6 +160,19 @@ h1 {
   color: #999;
 }
 
+.todo-date {
+  color: #aaa;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.device-id--code {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-align: center;
+}
+
 .remove {
   border: none;
   background: none;
@@ -145,10 +194,50 @@ h1 {
   color: #d33;
 }
 
+.settings-dialog {
+  width: min(420px, calc(100vw - 2rem));
+  max-height: min(600px, calc(100vh - 4rem));
+  overflow-y: auto;
+  border: none;
+  border-radius: 12px;
+  padding: 1.25rem;
+  font-family: system-ui, sans-serif;
+}
+
+.settings-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.settings-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.settings-dialog__header h2 {
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.settings-dialog__header .close {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: #999;
+}
+
 .panel {
-  margin-top: 2rem;
-  padding-top: 1.5rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
   border-top: 1px solid #eee;
+}
+
+.panel:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 
 .panel h2 {

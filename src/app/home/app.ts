@@ -8,10 +8,13 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { NgQlRequestState } from 'ng-ql';
+import type { DeviceCode } from './model/device-code.model';
+import { DeviceCodeResource } from './resource/device-code-resource';
 import type { LinkRequest } from './model/link-request.model';
 import { LinkRequestResource } from './resource/link-request-resource';
 import type { Todo } from './model/todo.model';
 import { TodoResource } from './resource/todo-resource';
+import { RelativeTimePipe } from './relative-time.pipe';
 import { getUserId, setUserId } from './user-id';
 
 type Filter = 'all' | 'active' | 'done';
@@ -22,7 +25,7 @@ const POLL_INTERVAL_MS = 4000;
 
 @Component({
   selector: 'app-root',
-  imports: [FormsModule],
+  imports: [FormsModule, RelativeTimePipe],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -30,6 +33,7 @@ export class App {
   private readonly injector = inject(EnvironmentInjector);
   private readonly todos = inject(TodoResource);
   private readonly linkRequests = inject(LinkRequestResource);
+  private readonly deviceCodes = inject(DeviceCodeResource);
   private searchDebounce?: ReturnType<typeof setTimeout>;
 
   protected readonly filter = signal<Filter>('all');
@@ -48,9 +52,14 @@ export class App {
   // -- Device identity & linking --------------------------------------------
 
   protected readonly userId = signal(getUserId());
-  protected readonly linkTargetId = signal('');
+  protected readonly linkTargetCode = signal('');
   protected readonly linkState = signal<LinkState>('idle');
   private outgoingRequestId: string | null = null;
+
+  /** Whether this device is currently discoverable via `deviceCode`. */
+  protected readonly listening = signal(false);
+  /** The short code other devices can enter to find this device, while listening. */
+  protected readonly deviceCode = signal<string | null>(null);
 
   /** Pending requests from other devices asking to adopt *this* device's id. */
   protected readonly incomingRequests = signal<NgQlRequestState<LinkRequest[]>>(
@@ -59,7 +68,11 @@ export class App {
 
   constructor() {
     const handle = setInterval(() => this.poll(), POLL_INTERVAL_MS);
-    inject(DestroyRef).onDestroy(() => clearInterval(handle));
+    inject(DestroyRef).onDestroy(() => {
+      clearInterval(handle);
+      const code = this.deviceCode();
+      if (code) this.deviceCodes.destroy(code).subscribe();
+    });
   }
 
   // -- Filtering & search ----------------------------------------------------
@@ -160,27 +173,74 @@ export class App {
     reader.readAsText(file);
   }
 
+  // -- Settings dialog ---------------------------------------------------
+
+  /** Closes the <dialog> when its ::backdrop (the element itself, padding included) is clicked. */
+  onDialogBackdropClick(event: MouseEvent, dialog: HTMLDialogElement): void {
+    if (event.target === dialog) dialog.close();
+  }
+
   // -- Device linking --------------------------------------------------------
 
-  async copyUserId(): Promise<void> {
+  /** Registers a fresh 5-digit code for this device, retrying on a (rare) collision. */
+  startListening(attempt = 0): void {
+    if (attempt >= 5) {
+      this.linkState.set('error');
+      return;
+    }
+    const code = String(Math.floor(10_000 + Math.random() * 90_000));
+    this.deviceCodes.create({ code, userId: this.userId() } as Partial<DeviceCode>).subscribe({
+      next: () => {
+        this.deviceCode.set(code);
+        this.listening.set(true);
+      },
+      error: () => this.startListening(attempt + 1),
+    });
+  }
+
+  stopListening(): void {
+    const code = this.deviceCode();
+    this.listening.set(false);
+    this.deviceCode.set(null);
+    if (code) this.deviceCodes.destroy(code).subscribe();
+  }
+
+  async copyDeviceCode(): Promise<void> {
+    const code = this.deviceCode();
+    if (!code) return;
     try {
-      await navigator.clipboard.writeText(this.userId());
+      await navigator.clipboard.writeText(code);
     } catch {
       // Clipboard API unavailable; ignore.
     }
   }
 
+  /** Resolves the entered 5-digit code to a device id, then sends that device a link request. */
   requestLink(): void {
-    const targetUserId = this.linkTargetId().trim();
-    if (!targetUserId || targetUserId === this.userId()) return;
+    const code = this.linkTargetCode().trim();
+    if (!code) return;
 
     this.linkState.set('sending');
-    this.linkRequests
-      .create({ requesterId: this.userId(), targetUserId, status: 'pending' })
+    this.deviceCodes
+      .query()
+      .where({ code })
+      .get()
       .subscribe({
-        next: (row) => {
-          this.outgoingRequestId = row.id;
-          this.linkState.set('waiting');
+        next: (matches) => {
+          const targetUserId = matches[0]?.userId;
+          if (!targetUserId || targetUserId === this.userId()) {
+            this.linkState.set('error');
+            return;
+          }
+          this.linkRequests
+            .create({ requesterId: this.userId(), targetUserId, status: 'pending' })
+            .subscribe({
+              next: (row) => {
+                this.outgoingRequestId = row.id;
+                this.linkState.set('waiting');
+              },
+              error: () => this.linkState.set('error'),
+            });
         },
         error: () => this.linkState.set('error'),
       });
@@ -190,7 +250,7 @@ export class App {
     const id = this.outgoingRequestId;
     this.outgoingRequestId = null;
     this.linkState.set('idle');
-    this.linkTargetId.set('');
+    this.linkTargetCode.set('');
     if (id) this.linkRequests.destroy(id).subscribe();
   }
 
@@ -216,7 +276,7 @@ export class App {
   }
 
   private poll(): void {
-    this.incomingRequests().refresh();
+    if (this.listening()) this.incomingRequests().refresh();
 
     const id = this.outgoingRequestId;
     if (!id) return;
@@ -225,11 +285,12 @@ export class App {
       if (!row) return;
 
       if (row.status === 'approved') {
+        if (this.listening()) this.stopListening();
         setUserId(row.targetUserId);
         this.userId.set(row.targetUserId);
         this.outgoingRequestId = null;
         this.linkState.set('idle');
-        this.linkTargetId.set('');
+        this.linkTargetCode.set('');
         this.incomingRequests.set(this.buildIncomingRequests());
         this.list.set(this.runQuery());
         this.linkRequests.destroy(id).subscribe();

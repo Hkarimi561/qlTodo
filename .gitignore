@@ -28,6 +28,9 @@ yarn-error.log
 !.vscode/extensions.json
 .history/*
 
+# Local Supabase credentials — copy environment.example.ts to fill this in
+/src/environments/environment.ts
+
 # Miscellaneous
 /.angular/cache
 .sass-cache/

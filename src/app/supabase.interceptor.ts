@@ -56,16 +56,17 @@ function rewriteTodosGet(req: HttpRequest<unknown>): HttpParams {
 }
 
 const LINK_REQUEST_FIELDS = ['id', 'requesterId', 'targetUserId', 'status'] as const;
+const DEVICE_CODE_FIELDS = ['code', 'userId'] as const;
 
 /**
- * Rewrites every `/api/todos` and `/api/link_requests` call into the
- * equivalent Supabase PostgREST request — table columns are named to match
- * the TS models exactly (`createdAt`, `requesterId`, ...), so no snake_case
- * translation is needed; see the SQL in README.md. Because this calls
- * `next()` with the rewritten request instead of short-circuiting, the real
- * HTTP call goes out and shows up in DevTools' Network tab like any other
- * request — and `HttpTestingController` can intercept it in tests exactly
- * as it would a hand-written `HttpClient` call.
+ * Rewrites every `/api/todos`, `/api/link_requests`, and `/api/device_codes`
+ * call into the equivalent Supabase PostgREST request — table columns are
+ * named to match the TS models exactly (`createdAt`, `requesterId`, ...), so
+ * no snake_case translation is needed; see the SQL in README.md. Because
+ * this calls `next()` with the rewritten request instead of
+ * short-circuiting, the real HTTP call goes out and shows up in DevTools'
+ * Network tab like any other request — and `HttpTestingController` can
+ * intercept it in tests exactly as it would a hand-written `HttpClient` call.
  */
 export const supabaseInterceptor: HttpInterceptorFn = (req, next) => {
   if (!req.url.startsWith(API_PREFIX)) return next(req);
@@ -145,6 +146,43 @@ export const supabaseInterceptor: HttpInterceptorFn = (req, next) => {
       return next(
         req.clone({
           url: `${environment.supabaseUrl}/rest/v1/link_requests`,
+          params,
+          headers: supabaseHeaders(req.headers, { single: req.method === 'PATCH' }),
+        }),
+      );
+    }
+  }
+
+  if (req.url.startsWith(`${API_PREFIX}device_codes`)) {
+    const code = req.url.split(`${API_PREFIX}device_codes/`)[1];
+
+    if (req.method === 'GET') {
+      const params = code
+        ? new HttpParams().set('code', `eq.${code}`)
+        : mapEquality(req.params, new HttpParams(), DEVICE_CODE_FIELDS);
+      return next(
+        req.clone({
+          url: `${environment.supabaseUrl}/rest/v1/device_codes`,
+          params,
+          headers: supabaseHeaders(req.headers, { single: !!code }),
+        }),
+      );
+    }
+
+    if (req.method === 'POST') {
+      return next(
+        req.clone({
+          url: `${environment.supabaseUrl}/rest/v1/device_codes`,
+          headers: supabaseHeaders(req.headers, { single: true }),
+        }),
+      );
+    }
+
+    if ((req.method === 'PATCH' || req.method === 'DELETE') && code) {
+      const params = new HttpParams().set('code', `eq.${code}`);
+      return next(
+        req.clone({
+          url: `${environment.supabaseUrl}/rest/v1/device_codes`,
           params,
           headers: supabaseHeaders(req.headers, { single: req.method === 'PATCH' }),
         }),

@@ -27,6 +27,15 @@ jobs:
 
       - run: npm ci
 
+      - name: Write environment.ts from repo secrets
+        run: |
+          cat > src/environments/environment.ts <<EOF
+          export const environment = {
+            supabaseUrl: '${{ secrets.SUPABASE_URL }}',
+            supabaseAnonKey: '${{ secrets.SUPABASE_ANON_KEY }}',
+          };
+          EOF
+
       - run: npx ng build --base-href /qlTodo/
 
       - name: Add .nojekyll and SPA 404 fallback
